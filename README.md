@@ -321,3 +321,11 @@ check_file  final_check
 systemd-1 on /mnt type autofs (rw,relatime,fd=33,pgrp=1,timeout=0,minproto=5,maxproto=5,direct,pipe_ino=11231)
 192.168.50.10:/srv/share/ on /mnt type nfs (rw,relatime,vers=3,rsize=32768,wsize=32768,namlen=255,hard,proto=udp,timeo=11,retrans=3,sec=sys,mountaddr=192.168.50.10,mountvers=3,mountport=20048,mountproto=udp,local_lock=none,addr=192.168.50.10)
 ```
+
+
+
+## Сложности
+- Небольшие ресурсы главной виртуальной машиной Ubuntu. Закончилась память, разбирался с увеличением ресурсов для VMWare и удалением лишних вм (разрегистрировать, удалить), работа с локальными боксами вагрант
+- Особенности при работе с EOF (в новинку), не страшно, можно спокойно добавлять в sh
+- Привыкаю к синтаксису Vagranfile (end лишний/нелишний, скобки и тд)
+- Пока не разобрался с kerberos
