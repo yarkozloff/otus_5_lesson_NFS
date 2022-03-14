@@ -96,7 +96,9 @@ Cоздаём и настраиваем директорию, которая �
 ```
 Cоздаём в файле __/etc/exports__ структуру, которая позволит экспортировать ранее созданную директорию
 ```
-[root@nfss ~]# cat << EOF > /etc/exports /srv/share 192.168.50.11/32(rw,sync,root_squash) EOF
+[root@nfss ~]# cat > /etc/exports << EOF 
+> /srv/share 192.168.50.11/32(rw,sync,root_squash) 
+EOF
 [root@nfss ~]# cat /etc/exports
 /srv/share 192.168.50.11/32(rw,sync,root_squash)
 ```
@@ -232,5 +234,90 @@ systemd-1 on /mnt type autofs (rw,relatime,fd=25,pgrp=1,timeout=0,minproto=5,max
 192.168.50.10:/srv/share/ on /mnt type nfs (rw,relatime,vers=3,rsize=32768,wsize=32768,namlen=255,hard,proto=udp,timeo=11,retrans=3,sec=sys,mountaddr=192.168.50.10,mountvers=3,mountport=20048,mountproto=udp,local_lock=none,addr=192.168.50.10)
 ```
 ## Создание автоматизированного Vagrantfile
+Выходим из машин, останавливаем машины, удаляем:
+```
+sam@yarkozloff:/otus/nfs$ sudo vagrant halt
+==> nfsc: Attempting graceful shutdown of VM...
+==> nfss: Attempting graceful shutdown of VM...
+sam@yarkozloff:/otus/nfs$ sudo vagrant destroy
+    nfsc: Are you sure you want to destroy the 'nfsc' VM? [y/N] y
+==> nfsc: Destroying VM and associated drives...
+    nfss: Are you sure you want to destroy the 'nfss' VM? [y/N] y
+==> nfss: Destroying VM and associated drives...
+```
+## Проверка работоспособности
+### На сервере создаем файл check_file, затем проверяем его на клиенте в соответсвующем каталоге. Перезагружаем клиент, еще раз проверяем:
+```
+sam@yarkozloff:/otus/nfs$ sudo vagrant ssh nfss
+Last login: Mon Mar 14 21:08:14 2022 from 10.0.2.2
+[vagrant@nfss ~]$ sudo -i
+[root@nfss ~]# cd /srv/share/upload/
+[root@nfss upload]# touch check_file
+[root@nfss upload]# ls -a
+.  ..  check_file
+[root@nfss upload]# exit
+logout
+[vagrant@nfss ~]$ exit
+logout
+Connection to 127.0.0.1 closed.
 
+sam@yarkozloff:/otus/nfs$ sudo vagrant ssh nfsc
+Last login: Mon Mar 14 21:02:27 2022 from 10.0.2.2
+[vagrant@nfsc ~]$ cd /mnt/upload/
+[vagrant@nfsc upload]$ ls -a
+.  ..  check_file
+[vagrant@nfsc upload]$ sudo reboot
+Connection to 127.0.0.1 closed by remote host.
+Connection to 127.0.0.1 closed.
 
+sam@yarkozloff:/otus/nfs$ sudo vagrant ssh nfsc
+Last login: Mon Mar 14 21:15:00 2022 from 10.0.2.2
+[vagrant@nfsc ~]$ ls /mnt/upload/
+check_file
+```
+### Проверяем сервер. Перезагружаем, проверяем наличие файлов, работу служб, экспортов, RPC:
+```
+[vagrant@nfss ~]$ sudo reboot
+Connection to 127.0.0.1 closed by remote host.
+Connection to 127.0.0.1 closed.
+sam@yarkozloff:/otus/nfs$ sudo vagrant ssh nfss
+Last login: Mon Mar 14 21:22:40 2022 from 10.0.2.2
+[vagrant@nfss ~]$ ls -a /srv/share/upload/
+.  ..  check_file
+[vagrant@nfss ~]$ systemctl status nfs
+● nfs-server.service - NFS server and services
+   Loaded: loaded (/usr/lib/systemd/system/nfs-server.service; enabled; vendor preset: disabled)
+  Drop-In: /run/systemd/generator/nfs-server.service.d
+           └─order-with-mounts.conf
+   Active: active (exited) since Mon 2022-03-14 21:23:21 UTC; 42s ago
+  Process: 810 ExecStartPost=/bin/sh -c if systemctl -q is-active gssproxy; then systemctl reload gssproxy ; fi (code=exited, status=0/SUCCESS)
+  Process: 784 ExecStart=/usr/sbin/rpc.nfsd $RPCNFSDARGS (code=exited, status=0/SUCCESS)
+  Process: 780 ExecStartPre=/usr/sbin/exportfs -r (code=exited, status=0/SUCCESS)
+ Main PID: 784 (code=exited, status=0/SUCCESS)
+   CGroup: /system.slice/nfs-server.service
+[vagrant@nfss ~]$ systemctl status firewalld
+● firewalld.service - firewalld - dynamic firewall daemon
+   Loaded: loaded (/usr/lib/systemd/system/firewalld.service; enabled; vendor preset: enabled)
+   Active: active (running) since Mon 2022-03-14 21:23:14 UTC; 58s ago
+     Docs: man:firewalld(1)
+ Main PID: 403 (firewalld)
+   CGroup: /system.slice/firewalld.service
+           └─403 /usr/bin/python2 -Es /usr/sbin/firewalld --nofork --nopid
+[vagrant@nfss ~]$ sudo exportfs -s
+/srv/share  192.168.50.11/32(sync,wdelay,hide,no_subtree_check,sec=sys,rw,secure,root_squash,no_all_squash)
+[vagrant@nfss ~]$ showmount -a 192.168.50.10
+All mount points on 192.168.50.10:
+192.168.50.11:/srv/share
+```
+### Проверяем клиент.  Проверяем статус монтирования, создаём и проверяем тестовый файл final_check:
+```
+sam@yarkozloff:/otus/nfs$ sudo vagrant ssh nfsc
+Last login: Mon Mar 14 21:18:29 2022 from 10.0.2.2
+[vagrant@nfsc ~]$ cd /mnt/upload/
+[vagrant@nfsc upload]$ touch final_check
+[vagrant@nfsc upload]$ ls
+check_file  final_check
+[vagrant@nfsc upload]$ mount | grep mnt
+systemd-1 on /mnt type autofs (rw,relatime,fd=33,pgrp=1,timeout=0,minproto=5,maxproto=5,direct,pipe_ino=11231)
+192.168.50.10:/srv/share/ on /mnt type nfs (rw,relatime,vers=3,rsize=32768,wsize=32768,namlen=255,hard,proto=udp,timeo=11,retrans=3,sec=sys,mountaddr=192.168.50.10,mountvers=3,mountport=20048,mountproto=udp,local_lock=none,addr=192.168.50.10)
+```
